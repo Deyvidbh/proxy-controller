@@ -13,14 +13,25 @@ class IpPoolSeeder extends Seeder
         $endIp   = ip2long('100.64.2.199');
 
         $batch = [];
+        $totalInserted = 0;
 
         for ($ip = $startIp; $ip <= $endIp; $ip++) {
+            $ipString = long2ip($ip);
+
+            // Ignora IPs terminando com .0 ou .255
+            $lastOctet = (int) explode('.', $ipString)[3];
+            if ($lastOctet === 0 || $lastOctet === 255) {
+                continue;
+            }
+
             $batch[] = [
-                'ip_address' => long2ip($ip),
+                'ip_address' => $ipString,
                 'is_active' => true,
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
+
+            $totalInserted++;
 
             if (count($batch) === 1000) {
                 IpPool::insert($batch);
@@ -32,7 +43,6 @@ class IpPoolSeeder extends Seeder
             IpPool::insert($batch);
         }
 
-        $total = $endIp - $startIp + 1;
-        $this->command->info("IpPoolSeeder: $total IPs inseridos.");
+        $this->command->info("IpPoolSeeder: $totalInserted IPs válidos inseridos.");
     }
 }
