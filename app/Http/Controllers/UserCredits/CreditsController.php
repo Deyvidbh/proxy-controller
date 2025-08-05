@@ -30,16 +30,15 @@ class CreditsController extends Controller implements HasMiddleware
     {
         $user = $request->user();
 
-        // Busque os dados que a página precisa
-        $balance = $user->credits_balance ?? 0;
-
-        // Buscando as transações. Ajuste o nome do seu model se for diferente.
-        $transactions = UserCredit::where('user_id', $user->id)->latest()->get();
+        $userCreditService = new UserCreditService();
+        $creditData = $userCreditService->getSummary($user->id);
 
         // Renderiza o componente Vue e passa os dados diretamente
         return Inertia::render('Dashboard/Credits/Index', [
-            'balance'      => $balance,
-            'transactions' => $transactions,
+            'success'         => true,
+            'balance'         => $user->credits_balance,
+            'credits_summary' => $creditData['summary'],
+            'transactions'    => $creditData['credits'],
         ]);
     }
 
@@ -49,7 +48,7 @@ class CreditsController extends Controller implements HasMiddleware
     public function create(Request $request)
     {
         $validated = $request->validate([
-            'quantity' => 'required|numeric|between:66,300',
+            'quantity' => 'required|numeric|between:66,3000',
         ]);
 
         $quantity = intval($validated['quantity']);
@@ -64,8 +63,8 @@ class CreditsController extends Controller implements HasMiddleware
             "items" => [
                 [
                     "title" => $quantity . " créditos",
-                    "quantity" => 1,
-                    "unit_price" => $quantity * $unit_price,
+                    "quantity" => $quantity,
+                    "unit_price" => $unit_price,
                 ]
             ],
             "payer" => [

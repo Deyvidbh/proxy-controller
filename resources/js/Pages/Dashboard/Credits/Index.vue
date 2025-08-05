@@ -3,30 +3,24 @@ import { ref, computed } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
-// --- Props (Dados vindos diretamente do Controller Laravel) ---
 const props = defineProps({
-  balance: {
-    type: Number,
-    required: true,
-  },
+  balance: Number,
   transactions: {
     type: Array,
     default: () => [],
   },
+  credits_summary: {
+    type: Object,
+    default: () => ({}),
+  }
 });
 
-// --- Estado Reativo da Página ---
 const isSubmitting = ref(false);
 const isModalOpen = ref(false);
-const creditQuantity = ref(50); // Valor inicial do input
+const creditQuantity = ref(50);
 
-// --- Notificações ---
-// Sistema de notificação reativo que lê as "flash messages" do Laravel.
 const notification = computed(() => {
   const flash = usePage().props.flash;
-
-  // Usamos o "?." para verificar se 'flash' existe antes de tentar acessar 'success' ou 'error'.
-  // Se 'flash' for undefined, a expressão inteira retorna undefined (que é "falso") sem dar erro.
   if (flash?.success) {
     return { show: true, type: 'success', message: flash.success };
   }
@@ -36,7 +30,6 @@ const notification = computed(() => {
   return { show: false };
 });
 
-// --- Métodos ---
 const addCredits = () => {
   router.post(route('dashboard.credits.create'), {
     quantity: creditQuantity.value,
@@ -46,25 +39,21 @@ const addCredits = () => {
     onFinish: () => isSubmitting.value = false,
     onSuccess: () => {
       closeModal();
-      // A notificação aparece automaticamente via `computed property`.
-      // As props são atualizadas automaticamente pelo Inertia.
     },
     onError: (errors) => {
       if (errors.quantity) {
-        alert('Erro: ' + errors.quantity); // Alerta simples para erro de validação
+        alert('Erro: ' + errors.quantity);
       }
     }
   });
 };
 
-// Funções do Modal
 const openModal = () => isModalOpen.value = true;
 const closeModal = () => {
   isModalOpen.value = false;
   creditQuantity.value = 50;
 };
 
-// --- Funções de Formatação (Helpers) ---
 const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const formatDate = (dateString) => new Date(dateString).toLocaleString('pt-BR');
 const getTypeClass = (type) => type === 'credit' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
@@ -93,15 +82,15 @@ const getStatusClass = (status) => {
               + Adicionar Créditos
             </button>
             <div class="bg-blue-100 text-blue-700 px-4 py-2 rounded-md shadow-sm">
-              Saldo: <span class="font-bold">{{ props.balance }}</span> créditos
+              Saldo: <span class="font-bold">{{ formatCurrency(props.balance) }}</span>
             </div>
           </div>
 
           <div v-if="notification.show"
             :class="notification.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'"
             class="p-4 mb-4 text-sm rounded-lg" role="alert">
-            <span class="font-medium">{{ notification.type === 'success' ? 'Sucesso!' : 'Erro!' }}</span> {{
-              notification.message }}
+            <span class="font-medium">{{ notification.type === 'success' ? 'Sucesso!' : 'Erro!' }}</span>
+            {{ notification.message }}
           </div>
 
           <div>
@@ -155,6 +144,7 @@ const getStatusClass = (status) => {
       </div>
     </div>
 
+    <!-- Modal -->
     <div v-if="isModalOpen"
       class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center">
       <div class="relative mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
@@ -167,7 +157,7 @@ const getStatusClass = (status) => {
                   créditos</label>
                 <input v-model="creditQuantity" type="number" id="quantity"
                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
-                  required min="50" max="300">
+                  required min="50" max="3000">
               </div>
               <div class="flex justify-center">
                 <button type="submit" :disabled="isSubmitting"
