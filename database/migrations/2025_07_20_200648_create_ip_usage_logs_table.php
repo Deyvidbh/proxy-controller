@@ -21,6 +21,7 @@ return new class extends Migration
             $table->string('squid_username');
 
             $table->string('ip_address');
+            $table->string('port');
             $table->timestamp('used_at');
 
             $table->timestamps();

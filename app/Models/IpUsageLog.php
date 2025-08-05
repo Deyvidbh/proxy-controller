@@ -15,7 +15,16 @@ class IpUsageLog extends Model
         'user_email',
         'squid_username',
         'ip_address',
+        'port',
         'used_at',
     ];
-    
+
+    protected $casts = [
+        'used_at' => 'datetime',
+    ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 }

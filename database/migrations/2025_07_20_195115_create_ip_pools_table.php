@@ -16,6 +16,7 @@ return new class extends Migration
             $table->string('ip_address')->unique();
             $table->boolean('is_active')->default(true);
             $table->string('description')->nullable();
+            $table->boolean('in_use')->default(false);
             $table->timestamps();
         });
     }

@@ -11,8 +11,6 @@ use Illuminate\Support\Facades\DB;
 use App\Jobs\PaymentConfirmationMailJob;
 use App\Models\PaymentReference;
 
-
-
 class PaymentHandler
 {
     /**

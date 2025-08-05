@@ -17,6 +17,10 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->boolean('is_admin')->default(0);
             $table->boolean('is_approved')->default(false);
+            $table->string('squid_username')->nullable();
+            $table->string('squid_password')->nullable();
+            $table->boolean('auto_renovation')->default(true);
+            $table->double('credits_balance')->default(0);
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
             $table->rememberToken();

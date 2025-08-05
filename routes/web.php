@@ -24,7 +24,7 @@ Route::middleware([
 
         Route::prefix('credits')->name('credits.')->group(function () {
             Route::get('/', [CreditsController::class, 'index'])->name('index');
-            
+
             Route::post('/', [CreditsController::class, 'create'])->name('create');
         });
 
@@ -33,7 +33,10 @@ Route::middleware([
             Route::get('/', [PortsController::class, 'index'])->name('index');
 
             Route::post('/{port}/test', [PortsController::class, 'testProxy'])->name('test');
+            Route::post('/{port}/rotate', [PortsController::class, 'rotateIp'])->name('rotate');
+            Route::post('/ports/rotate-all', [PortsController::class, 'rotateAllIps'])->name('rotate-all');
 
-            Route::patch('/{port}/toggle-renovation', [PortsController::class, 'toggleRenovation'])->name('toggle-renovation');
+            Route::patch('/toggle-renovation', [PortsController::class, 'toggleRenovation'])->name('toggle-renovation');
+            Route::post('/renew-all', [PortsController::class, 'renewAllPorts'])->name('renew-all');
         });
     });

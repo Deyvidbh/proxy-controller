@@ -13,18 +13,20 @@ return new class extends Migration
     {
         Schema::create('squid_ports', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('user_id');
+            $table->unsignedBigInteger('user_id')->nullable();
             $table->unsignedInteger('port');
-            $table->string('username')->nullable();
-            $table->string('password')->nullable();
             $table->string('instance')->nullable();
             $table->string('host')->nullable();
-            $table->string('ip_address')->unique();
-            $table->boolean('auto_renovation')->default(true);
+            $table->unsignedBigInteger('ip_pool_id')->nullable();
+            $table->string('output_ip_address')->unique()->nullable();
             $table->timestamp('expires_at')->nullable();
+            $table->timestamp('last_renovation')->nullable();
+            $table->timestamp('last_update_ip')->nullable();
+            $table->boolean('in_use')->default(false);
             $table->timestamps();
 
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+            $table->foreign('ip_pool_id')->references('id')->on('ip_pools')->onDelete('set null');
+            $table->foreign('user_id')->references('id')->on('users')->onDelete('set null');
         });
     }
 

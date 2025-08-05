@@ -34,6 +34,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'auto_renovation'
     ];
 
     /**
@@ -84,5 +85,10 @@ class User extends Authenticatable
     public function userCredits(): HasMany
     {
         return $this->hasMany(UserCredit::class);
+    }
+
+    public function ipUsageLog()
+    {
+        return $this->hasMany(IpUsageLog::class);
     }
 }

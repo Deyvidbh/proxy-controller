@@ -13,9 +13,15 @@ class IpPool extends Model
         'ip_address',
         'is_active',
         'description',
+        'in_use'
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
     ];
+
+    public function squidPorts()
+    {
+        return $this->hasMany(SquidPort::class);
+    }
 }

@@ -3,19 +3,87 @@ import { ref, computed } from 'vue';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { CheckCircleIcon, XCircleIcon, ClockIcon, EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/solid';
-import { router } from '@inertiajs/vue3'; // Importe o router do Inertia
+import { router } from '@inertiajs/vue3';
 
-// Props recebidas do controller
 const props = defineProps({
     ports: Array,
+    user: Object,
 });
 
-// Estados reativos
-const testResults = ref({});
-const passwordVisible = ref({}); // Controla a visibilidade de cada senha
-const renovationLoading = ref({}); // Controla o loading de cada switch
+const rotating = ref({});
+const rotatingAll = ref(false);
 
-// Função para mostrar tempo restante
+const rotateIp = async (port) => {
+    rotating.value[port.id] = true;
+    try {
+        const response = await axios.post(route('dashboard.ports.rotate', { port: port.id }));
+        const updated = response.data;
+
+        // Atualiza IP visualmente
+        const updatedPort = props.ports.find(p => p.id === updated.portId);
+        if (updatedPort) {
+            updatedPort.output_ip_address = updated.newOutputIp;
+        }
+
+        testResults.value[port.id] = {
+            loading: false,
+            message: `IP rotacionado com sucesso: ${updated.newOutputIp}`,
+            success: true
+        };
+    } catch (error) {
+        testResults.value[port.id] = {
+            loading: false,
+            message: error.response?.data?.error || 'Erro ao rotacionar IP.',
+            success: false
+        };
+    } finally {
+        rotating.value[port.id] = false;
+    }
+};
+
+const rotateAllIps = async () => {
+    rotatingAll.value = true;
+    try {
+        const response = await axios.post(route('dashboard.ports.rotate-all'));
+        const updatedPorts = response.data.updatedPorts || [];
+        const skippedPorts = response.data.skippedPorts || [];
+
+        for (const updated of updatedPorts) {
+            const port = props.ports.find(p => p.id === updated.portId);
+            if (port) {
+                port.output_ip_address = updated.newOutputIp;
+                testResults.value[port.id] = {
+                    loading: false,
+                    message: `IP rotacionado para ${updated.newOutputIp}`,
+                    success: true
+                };
+            }
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        for (const skipped of skippedPorts) {
+            const port = props.ports.find(p => p.id === skipped.portId);
+            if (port) {
+                testResults.value[port.id] = {
+                    loading: false,
+                    message: skipped.reason,
+                    success: false
+                };
+            }
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+    } catch (error) {
+        console.error('Erro ao rotacionar IPs:', error);
+    } finally {
+        rotatingAll.value = false;
+    }
+};
+
+const testResults = ref({});
+const passwordVisible = ref({});
+const renovationLoading = ref({ global: false });
+const userCredits = ref(props.user.credits_balance);
+
 const formatTimeRemaining = (expiryDate) => {
     if (!expiryDate) return 'N/A';
     const now = new Date();
@@ -28,72 +96,160 @@ const formatTimeRemaining = (expiryDate) => {
     return `Expira em ${hours} hora${hours > 1 ? 's' : ''}`;
 };
 
-// Função para testar o proxy
 const testProxy = async (port) => {
     testResults.value[port.id] = { loading: true, message: null, success: false };
     try {
         const response = await axios.post(route('dashboard.ports.test', { port: port.id }));
-        testResults.value[port.id] = { loading: false, message: `OK! IP de Saída: ${response.data.ip}`, success: true };
+        testResults.value[port.id] = {
+            loading: false,
+            message: `OK! IP de Saída: ${response.data.ip}`,
+            success: true
+        };
     } catch (error) {
         const errorMessage = error.response?.data?.error || 'Ocorreu um erro desconhecido.';
-        testResults.value[port.id] = { loading: false, message: `Falha: ${errorMessage}`, success: false };
+        testResults.value[port.id] = {
+            loading: false,
+            message: `Falha: ${errorMessage}`,
+            success: false
+        };
     }
 };
 
-// Função para alternar visibilidade da senha
 const togglePasswordVisibility = (portId) => {
     passwordVisible.value[portId] = !passwordVisible.value[portId];
 };
 
-// Função para alternar a auto-renovação
-const toggleAutoRenovation = async (port) => {
-    renovationLoading.value[port.id] = true;
-    const newStatus = !port.auto_renovation;
+const toggleAutoRenovation = async () => {
+    renovationLoading.value.global = true;
+    const newStatus = !props.user.auto_renovation;
 
-    // Usamos o router do Inertia para fazer o PATCH, pois ele atualiza as props automaticamente
-    router.patch(route('dashboard.ports.toggle-renovation', { port: port.id }), {
+    router.patch(route('dashboard.ports.toggle-renovation'), {
         auto_renovation: newStatus,
     }, {
-        preserveState: true, // Mantém o estado da página (resultados dos testes, etc)
-        preserveScroll: true, // Mantém a posição do scroll
+        preserveState: true,
+        preserveScroll: true,
         onFinish: () => {
-            renovationLoading.value[port.id] = false;
+            renovationLoading.value.global = false;
         },
         onError: (errors) => {
-            // Você pode adicionar um tratamento de erro mais robusto aqui (ex: um toast)
             console.error("Erro ao atualizar a renovação:", errors);
         }
     });
 };
 
+const feedbackMessage = ref(null);
+const feedbackSuccess = ref(false);
 
-// Computada para exemplos
-const firstPort = computed(() => props.ports.length > 0 ? props.ports[0] : null);
+const renewingAll = ref(false);
+const renewalSummary = computed(() => {
+    const portCount = props.ports.length;
+    const costPerPort = portCount >= 20 ? 66 : 70;
+    const totalCost = portCount * costPerPort;
+    return {
+        portCount,
+        costPerPort,
+        totalCost,
+        hasEnoughCredits: props.user.credits_balance >= totalCost,
+    };
+});
+
+const renewAllPorts = async () => {
+    renewingAll.value = true;
+    feedbackMessage.value = null;
+
+    try {
+        const response = await axios.post(route('dashboard.ports.renew-all'));
+
+        feedbackSuccess.value = true;
+        feedbackMessage.value = response.data.message;
+
+        const renewedPorts = response.data.renewedPorts || [];
+
+        for (const renewed of renewedPorts) {
+            const port = props.ports.find(p => p.id === renewed.id);
+            if (port) {
+                port.expires_at = renewed.expires_at;
+                port.last_renovation = renewed.last_renovation;
+                port.active_license = true;
+            }
+        }
+
+        if (response.data.newCreditsBalance !== undefined) {
+            userCredits.value = response.data.newCreditsBalance;
+        }
+
+    } catch (error) {
+        feedbackSuccess.value = false;
+        feedbackMessage.value = error.response?.data?.message || 'Erro ao renovar portas.';
+    } finally {
+        renewingAll.value = false;
+    }
+};
+
+setTimeout(() => {
+    feedbackMessage.value = null;
+}, 6000);
 
 </script>
 
 <template>
     <AppLayout title="Portas Proxy">
         <template #header>
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Portas Proxy 🌐</h2>
+            <div class="flex justify-between items-center">
+                <h2 class="font-semibold text-xl text-gray-800 leading-tight">Portas Proxy 🌐</h2>
+                <div class="flex items-center space-x-3">
+                    <!-- <span class="text-sm text-gray-600">Auto-Renovação:</span> -->
+                    <!-- <button @click="toggleAutoRenovation" :disabled="renovationLoading.global"
+                        class="mr-2 relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+                        :class="props.user.auto_renovation ? 'bg-indigo-600' : 'bg-gray-300'" role="switch"
+                        :aria-checked="props.user.auto_renovation">
+                        <span class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition"
+                            :class="props.user.auto_renovation ? 'translate-x-5' : 'translate-x-0'">
+                        </span>
+                    </button> -->
+                    <button @click="rotateAllIps" :disabled="rotatingAll"
+                        class="mr-2 inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50">
+                        <span v-if="rotatingAll">Rotacionando IPs...</span>
+                        <span v-else>Rotacionar Todos os IPs</span>
+                    </button>
+                </div>
+            </div>
         </template>
 
         <div class="py-12">
             <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+
+                <div v-if="feedbackMessage" class="mb-4">
+                    <div :class="feedbackSuccess ? 'bg-green-100 border-green-500 text-green-800' : 'bg-red-100 border-red-500 text-red-800'"
+                        class="border-l-4 p-4 rounded" role="alert">
+                        {{ feedbackMessage }}
+                    </div>
+                </div>
 
                 <div v-if="$page.props.flash?.message"
                     class="mb-4 bg-green-100 border-l-4 border-green-500 text-green-700 p-4" role="alert">
                     <p>{{ $page.props.flash?.message }}</p>
                 </div>
 
-                <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg">
+                <div class="bg-white shadow-md rounded-lg p-6 mb-6 border border-gray-200">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">Renovação de Portas</h3>
+                    <p class="text-sm text-gray-700">Você possui <strong>{{ renewalSummary.portCount }}</strong> portas
+                        ativas.
+                    </p>
+                    <p class="text-sm text-gray-700">Custo por porta: <strong>{{ renewalSummary.costPerPort }}
+                            créditos</strong>
+                    </p>
+                    <p class="text-sm text-gray-700">Custo total da renovação: <strong>{{ renewalSummary.totalCost }}
+                            créditos</strong></p>
+                    <p class="text-sm text-gray-700">Seu saldo: <strong>{{ userCredits }} créditos</strong></p>
+
+                    <button :disabled="renewingAll || !renewalSummary.hasEnoughCredits" @click="renewAllPorts"
+                        class="mt-4 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50">
+                        {{ renewingAll ? 'Renovando...' : 'Renovar Todas as Portas' }}
+                    </button>
                 </div>
 
-            </div>
-        </div>
 
-        <div class="py-12">
-            <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
                 <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg">
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-200">
@@ -107,13 +263,10 @@ const firstPort = computed(() => props.ports.length > 0 ? props.ports[0] : null)
                                         Credenciais</th>
                                     <th
                                         class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        IP Autorizado</th>
+                                        IP de Saída</th>
                                     <th
                                         class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Status</th>
-                                    <th
-                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Auto-Renovação</th>
                                     <th
                                         class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Ações</th>
@@ -121,7 +274,7 @@ const firstPort = computed(() => props.ports.length > 0 ? props.ports[0] : null)
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
                                 <tr v-if="ports.length === 0">
-                                    <td colspan="6" class="px-6 py-4 text-center text-gray-500">Você ainda não possui
+                                    <td colspan="5" class="px-6 py-4 text-center text-gray-500">Você ainda não possui
                                         portas
                                         proxy.</td>
                                 </tr>
@@ -131,13 +284,15 @@ const firstPort = computed(() => props.ports.length > 0 ? props.ports[0] : null)
                                         </div>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900">Usuário: <span
-                                                class="font-mono bg-gray-100 px-1 rounded">{{ port.username }}</span>
+                                        <div class="text-sm text-gray-900">Usuário:
+                                            <span class="font-mono bg-gray-100 px-1 rounded">{{
+                                                props.user.squid_username
+                                            }}</span>
                                         </div>
                                         <div class="text-sm text-gray-500 flex items-center">
                                             Senha:
                                             <span class="font-mono bg-gray-100 px-1 rounded ml-1 mr-2">
-                                                {{ passwordVisible[port.id] ? port.password : '••••••••' }}
+                                                {{ passwordVisible[port.id] ? props.user.squid_password : '••••••••' }}
                                             </span>
                                             <button @click="togglePasswordVisibility(port.id)"
                                                 class="text-gray-400 hover:text-gray-600">
@@ -146,9 +301,9 @@ const firstPort = computed(() => props.ports.length > 0 ? props.ports[0] : null)
                                             </button>
                                         </div>
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 font-mono">{{
-                                        port.ip_address
-                                        }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 font-mono">
+                                        {{ port.output_ip_address || 'N/A' }}
+                                    </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <span v-if="port.active_license"
                                             class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Ativa</span>
@@ -159,50 +314,11 @@ const firstPort = computed(() => props.ports.length > 0 ? props.ports[0] : null)
                                             }}
                                         </div>
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <button @click="toggleAutoRenovation(port)" type="button"
-                                            :disabled="renovationLoading[port.id]"
-                                            class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 disabled:opacity-50"
-                                            :class="port.auto_renovation ? 'bg-indigo-600' : 'bg-gray-200'"
-                                            role="switch" :aria-checked="port.auto_renovation">
-                                            <span
-                                                class="pointer-events-none relative inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                                                :class="{ 'translate-x-5': port.auto_renovation, 'translate-x-0': !port.auto_renovation }">
-                                                <span
-                                                    class="absolute inset-0 flex h-full w-full items-center justify-center transition-opacity"
-                                                    :class="{ 'opacity-0 ease-out duration-100': port.auto_renovation, 'opacity-100 ease-in duration-200': !port.auto_renovation }"
-                                                    aria-hidden="true">
-                                                    <svg v-if="!renovationLoading[port.id]"
-                                                        class="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 12 12">
-                                                        <path d="M4 8l2-2m0 0l2-2M6 6L4 4m2 2l2 4" stroke="currentColor"
-                                                            stroke-width="2" stroke-linecap="round"
-                                                            stroke-linejoin="round" />
-                                                    </svg>
-                                                </span>
-                                                <span
-                                                    class="absolute inset-0 flex h-full w-full items-center justify-center transition-opacity"
-                                                    :class="{ 'opacity-100 ease-in duration-200': port.auto_renovation, 'opacity-0 ease-out duration-100': !port.auto_renovation }"
-                                                    aria-hidden="true">
-                                                    <svg v-if="!renovationLoading[port.id]"
-                                                        class="h-3 w-3 text-indigo-600" fill="currentColor"
-                                                        viewBox="0 0 12 12">
-                                                        <path
-                                                            d="M3.707 5.293a1 1 0 00-1.414 1.414l1.414-1.414zM5 8l-.707.707a1 1 0 001.414 0L5 8zm4.707-3.293a1 1 0 00-1.414-1.414l1.414 1.414zm-7.414 2l2 2 1.414-1.414-2-2-1.414 1.414zm3.414 2l4-4-1.414-1.414-4 4 1.414 1.414z" />
-                                                    </svg>
-                                                </span>
-                                                <svg v-if="renovationLoading[port.id]"
-                                                    class="animate-spin absolute inset-0 m-auto h-4 w-4 text-indigo-500"
-                                                    xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                    <circle class="opacity-25" cx="12" cy="12" r="10"
-                                                        stroke="currentColor" stroke-width="4"></circle>
-                                                    <path class="opacity-75" fill="currentColor"
-                                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                                                    </path>
-                                                </svg>
-                                            </span>
-                                        </button>
-                                    </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                        <button @click="rotateIp(port)" :disabled="rotating[port.id]"
+                                            class="mr-2 inline-flex items-center px-2 py-1.5 text-xs font-medium rounded-md shadow-sm bg-yellow-500 hover:bg-yellow-600 text-white ml-2 disabled:opacity-50">
+                                            {{ rotating[port.id] ? 'Rotacionando...' : 'Rotacionar IP' }}
+                                        </button>
                                         <button @click="testProxy(port)" :disabled="testResults[port.id]?.loading"
                                             class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
                                             <span v-if="testResults[port.id]?.loading">Testando...</span>
@@ -222,28 +338,36 @@ const firstPort = computed(() => props.ports.length > 0 ? props.ports[0] : null)
                     </div>
                 </div>
 
-                <div v-if="firstPort" class="mt-8 bg-white overflow-hidden shadow-xl sm:rounded-lg p-6">
+                <!-- EXEMPLOS PARA TODAS AS PORTAS -->
+                <div v-if="ports.length" class="mt-8 bg-white overflow-hidden shadow-xl sm:rounded-lg p-6">
                     <h3 class="text-lg font-medium text-gray-900 mb-4">Como Usar o Proxy (Exemplos)</h3>
-                    <p class="text-sm text-gray-600 mb-4">
-                        Para testar sua conexão via linha de comando, você pode usar o `curl`. Substitua os valores
-                        pelos dados
-                        da sua porta. Abaixo, usamos os dados da sua primeira porta como exemplo.
-                    </p>
-                    <div class="bg-gray-800 text-white p-4 rounded-md text-sm font-mono">
-                        <p class="mb-2"># Comando para testar com autenticação</p>
-                        <code class="block whitespace-pre-wrap">curl --proxy http://{{ firstPort.username }}:{{
-                            firstPort.password }}@{{ firstPort.host }}:{{ firstPort.port }} https://ipv4.icanhazip.com</code>
-                        <p class="mt-4 mb-2 text-gray-400"># Alternativa de comando</p>
-                        <code class="block whitespace-pre-wrap">curl -x http://{{ firstPort.host }}:{{ firstPort.port }}
-                    --proxy-user {{ firstPort.username }}:{{ firstPort.password }} https://ipv4.icanhazip.com</code>
+                    <p class="text-sm text-gray-600 mb-4">Abaixo estão exemplos de uso do `curl` para cada uma das suas
+                        portas
+                        proxy:</p>
+
+                    <div v-for="port in ports" :key="'example-' + port.id"
+                        class="mb-6 border border-gray-200 rounded p-4">
+                        <h4 class="text-sm font-semibold text-gray-700 mb-2">Porta: {{ port.host }}:{{ port.port }}</h4>
+
+                        <div class="bg-gray-800 text-white p-4 rounded-md text-sm font-mono">
+                            <p class="mb-2"># Comando para testar com autenticação</p>
+                            <code class="block whitespace-pre-wrap">
+                        curl --proxy http://{{ props.user.squid_username }}:{{ props.user.squid_password }}@{{ port.host
+                        }}:{{ port.port }} https://ipv4.icanhazip.com
+                    </code>
+
+                            <p class="mt-4 mb-2 text-gray-400"># Alternativa de comando</p>
+                            <code class="block whitespace-pre-wrap">
+                        curl -x http://{{ port.host }}:{{ port.port }} --proxy-user {{ props.user.squid_username }}:{{
+                            props.user.squid_password }} https://ipv4.icanhazip.com
+                    </code>
+                        </div>
+
+                        <p class="mt-2 text-xs text-gray-500">
+                            IP de saída esperado:
+                            <span class="font-mono bg-gray-100 p-1 rounded">{{ port.output_ip_address || 'N/A' }}</span>
+                        </p>
                     </div>
-                    <p class="mt-4 text-xs text-gray-500">
-                        O comando acima deve retornar o seu IP Autorizado: <span
-                            class="font-mono bg-gray-100 p-1 rounded">{{
-                                firstPort.ip_address }}</span>. Se retornar outro IP ou um erro, verifique se o IP da sua
-                        máquina de
-                        teste está corretamente configurado como "IP Autorizado".
-                    </p>
                 </div>
             </div>
         </div>

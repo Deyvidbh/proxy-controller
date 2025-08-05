@@ -48,9 +48,8 @@ class CreditsController extends Controller implements HasMiddleware
      */
     public function create(Request $request)
     {
-        // Validação simplificada. Se falhar, o Laravel/Inertia redirecionam com os erros.
         $validated = $request->validate([
-            'quantity' => 'required|numeric|between:50,300',
+            'quantity' => 'required|numeric|between:66,300',
         ]);
 
         $quantity = intval($validated['quantity']);
@@ -59,13 +58,13 @@ class CreditsController extends Controller implements HasMiddleware
         $userCreditService = new UserCreditService();
         $randomNumber = md5(uniqid(rand(), true));
         $refValue = "REF-{$user->id}-$randomNumber";
-        $unit_price = 10.0; // Exemplo
+        $unit_price = 5.0;
 
         $paymentData = [
             "items" => [
                 [
                     "title" => $quantity . " créditos",
-                    "quantity" => 1, // A quantidade de itens é 1, o preço total é calculado
+                    "quantity" => 1,
                     "unit_price" => $quantity * $unit_price,
                 ]
             ],
@@ -122,13 +121,11 @@ class CreditsController extends Controller implements HasMiddleware
 
             dispatch(new CreditPurchaseRequestMailJob($user, $userCredit, $paymentReference));
 
-            // Resposta de sucesso: redireciona com uma flash message.
             return redirect()->route('dashboard.credits.index')
                 ->with('success', 'Pedido de crédito criado! Verifique seu e-mail para o link de pagamento.');
         } catch (\Throwable $th) {
             DB::rollBack();
 
-            // Resposta de erro: redireciona de volta com uma flash message de erro.
             return redirect()->back()
                 ->with('error', 'Falha na criação da transação: ' . $th->getMessage());
         }
