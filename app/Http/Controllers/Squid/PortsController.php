@@ -193,9 +193,9 @@ class PortsController extends Controller
             return response()->json(['message' => 'Você não possui portas para renovar.'], 400);
         }
 
-        // Filtra portas que estão vencidas (ou vencem hoje)
         $renewablePorts = $ports->filter(function ($port) {
-            return $port->expires_at !== null && $port->expires_at->lte(now());
+            return $port->expires_at !== null
+                && $port->expires_at->toDateString() <= now()->toDateString();
         });
 
         if ($renewablePorts->isEmpty()) {
