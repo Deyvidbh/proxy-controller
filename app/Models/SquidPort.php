@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Exception\ConnectException;
 use App\Models\IpUsageLog;
 use App\Models\IpPool;
 use Carbon\Carbon;
@@ -101,30 +102,68 @@ class SquidPort extends Model
             return;
         }
 
-        try {
-            $client = new Client(['timeout' => 10.0]);
+        $client = new Client(['timeout' => 10.0]);
 
-            $proxyUrl = sprintf(
-                'http://%s:%s@%s:%d',
-                $user->squid_username,
-                $user->squid_password,
-                $host,
-                $port
-            );
+        $proxyUrl = sprintf(
+            'http://%s:%s@%s:%d',
+            $user->squid_username,
+            $user->squid_password,
+            $host,
+            $port
+        );
 
-            $response = $client->get('https://ipv4.icanhazip.com', [
-                'proxy' => $proxyUrl,
-            ]);
+        $attempts = 3;
+        $delaySec = 2;
 
-            $ip = trim($response->getBody()->getContents());
+        for ($i = 1; $i <= $attempts; $i++) {
+            try {
+                // pequeno atraso antes da 1ª/2ª/3ª tentativa, para dar tempo do squid reconfigurar
+                if ($i > 1) {
+                    sleep($delaySec);
+                }
 
-            $this->output_ip_address = $ip;
-            $this->saveQuietly();
-        } catch (RequestException $e) {
-            logger()->warning('Falha ao testar proxy na porta ' . $port, [
-                'error' => $e->getMessage(),
-            ]);
+                $response = $client->get('https://ipv4.icanhazip.com', [
+                    'proxy' => $proxyUrl,
+                ]);
+
+                $ip = trim($response->getBody()->getContents());
+
+                $this->output_ip_address = $ip;
+                $this->saveQuietly();
+
+                return; // sucesso, sai
+            } catch (ConnectException $e) {
+                // erro típico de “não conectou” — tenta de novo
+                logger()->warning(sprintf(
+                    'Falha de conexão ao testar proxy porta %s (tentativa %d/%d): %s',
+                    $port,
+                    $i,
+                    $attempts,
+                    $e->getMessage()
+                ));
+            } catch (RequestException $e) {
+                // outros erros HTTP
+                logger()->warning(sprintf(
+                    'RequestException ao testar proxy porta %s (tentativa %d/%d): %s',
+                    $port,
+                    $i,
+                    $attempts,
+                    $e->getMessage()
+                ));
+            } catch (\Throwable $e) {
+                // qualquer outra coisa
+                logger()->warning(sprintf(
+                    'Erro inesperado ao testar proxy porta %s (tentativa %d/%d): %s',
+                    $port,
+                    $i,
+                    $attempts,
+                    $e->getMessage()
+                ));
+            }
         }
+
+        // se chegou aqui, falhou todas — não lança exceção, só loga
+        logger()->warning('Não foi possível obter IP de saída após rotação (porta ' . $port . ').');
     }
 
     public function assignNewIpForUser(): bool
