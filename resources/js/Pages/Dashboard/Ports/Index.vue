@@ -267,6 +267,10 @@ setTimeout(() => {
                                     <th
                                         class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Status</th>
+
+                                    <th
+                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Última troca do IP</th>
                                     <th
                                         class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Ações</th>
@@ -287,7 +291,7 @@ setTimeout(() => {
                                         <div class="text-sm text-gray-900">Usuário:
                                             <span class="font-mono bg-gray-100 px-1 rounded">{{
                                                 props.user.squid_username
-                                            }}</span>
+                                                }}</span>
                                         </div>
                                         <div class="text-sm text-gray-500 flex items-center">
                                             Senha:
@@ -313,6 +317,9 @@ setTimeout(() => {
                                             <ClockIcon class="h-4 w-4 mr-1" /> {{ formatTimeRemaining(port.expires_at)
                                             }}
                                         </div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 font-mono">
+                                        {{ port.last_update_ip_formatted || 'N/A' }}
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                         <button @click="rotateIp(port)" :disabled="rotating[port.id]"

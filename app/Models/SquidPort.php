@@ -36,7 +36,10 @@ class SquidPort extends Model
         'in_use'          => 'boolean',
     ];
 
-    protected $appends = ['active_license'];
+    protected $appends = [
+        'active_license',
+        'last_update_ip_formatted'
+    ];
 
     #region Model Events
     protected static function booted()
@@ -215,6 +218,13 @@ class SquidPort extends Model
         }
     }
     #endregion
+
+    public function getLastUpdateIpFormattedAttribute()
+    {
+        return $this->last_update_ip
+            ? $this->last_update_ip->timezone('America/Sao_Paulo')->format('d/m/Y H:i')
+            : null;
+    }
 
     #region Accessors / Scopes / Relations
     public function getActiveLicenseAttribute(): bool
