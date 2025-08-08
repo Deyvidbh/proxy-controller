@@ -3,19 +3,13 @@
 namespace App\Http\Controllers\Squid;
 
 use App\Http\Controllers\Controller;
-
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-
 use App\Models\SquidPort;
-
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
-
 use Inertia\Inertia;
-
 use App\Services\UserCredits\UserCreditService;
 
 class PortsController extends Controller
@@ -27,6 +21,7 @@ class PortsController extends Controller
         $this->userCreditService = $userCreditService;
     }
 
+
     public static function middleware(): array
     {
         return [
@@ -34,8 +29,9 @@ class PortsController extends Controller
         ];
     }
 
+
     /**
-     * Exibe a página das pórtas, já passando os dados necessários como props.
+     * Exibe a página das portas (props diretas).
      */
     public function index(Request $request)
     {
@@ -43,7 +39,6 @@ class PortsController extends Controller
 
         $ports = $user->squidPorts()->get();
 
-        // Renderiza o componente Vue e passa os dados diretamente
         return Inertia::render('Dashboard/Ports/Index', [
             'ports' => $ports,
             'user' => [
@@ -108,8 +103,8 @@ class PortsController extends Controller
             return response()->json(['error' => 'Não autorizado'], 403);
         }
 
-        // Respeita intervalo de 48h
-        if ($port->last_update_ip && Carbon::parse($port->last_update_ip)->diffInHours(now()) < 48) {
+        // Checagem 48h — agora com casts garantidos
+        if ($port->last_update_ip && $port->last_update_ip->diffInHours(now()) < 48) {
             return response()->json([
                 'error' => 'O IP desta porta só pode ser rotacionado a cada 48 horas.'
             ], 429);
@@ -119,14 +114,18 @@ class PortsController extends Controller
 
         if (!$rotated) {
             return response()->json([
-                'error' => 'Não foi possível encontrar um IP disponível para esta porta.'
+                'error' => 'Houve uma falha ao completar operação, clique em testar conexão para verificar se foi feita alteração.'
             ], 500);
         }
 
+        // O updated hook já atualiza output_ip_address via test
+        $port->refresh();
+
         return response()->json([
-            'message' => 'IP rotacionado com sucesso.',
-            'portId' => $port->id,
-            'newOutputIp' => $port->output_ip_address,
+            'message'      => 'IP rotacionado com sucesso.',
+            'portId'       => $port->id,
+            'newOutputIp'  => $port->output_ip_address,
+            'lastUpdateIp' => optional($port->last_update_ip)->toIso8601String(),
         ]);
     }
 
@@ -137,7 +136,7 @@ class PortsController extends Controller
         $skippedPorts = [];
 
         foreach ($user->squidPorts as $port) {
-            if ($port->last_update_ip && Carbon::parse($port->last_update_ip)->diffInHours(now()) < 48) {
+            if ($port->last_update_ip && $port->last_update_ip->diffInHours(now()) < 48) {
                 $skippedPorts[] = [
                     'portId' => $port->id,
                     'reason' => 'Aguarde 48h para nova rotação.',
@@ -148,8 +147,9 @@ class PortsController extends Controller
             $success = $port->assignNewIpForUser();
 
             if ($success) {
+                $port->refresh();
                 $updatedPorts[] = [
-                    'portId' => $port->id,
+                    'portId'      => $port->id,
                     'newOutputIp' => $port->output_ip_address,
                 ];
             } else {
@@ -161,7 +161,7 @@ class PortsController extends Controller
         }
 
         return response()->json([
-            'message' => 'Processo de rotação finalizado.',
+            'message'      => 'Processo de rotação finalizado.',
             'updatedPorts' => $updatedPorts,
             'skippedPorts' => $skippedPorts,
         ]);
@@ -193,6 +193,7 @@ class PortsController extends Controller
             return response()->json(['message' => 'Você não possui portas para renovar.'], 400);
         }
 
+        // “Pode renovar no dia do vencimento” — compara só a data
         $renewablePorts = $ports->filter(function ($port) {
             return $port->expires_at !== null
                 && $port->expires_at->toDateString() <= now()->toDateString();
@@ -204,10 +205,10 @@ class PortsController extends Controller
             ], 400);
         }
 
-        $portCount = $renewablePorts->count();
-        $costPerPort = $portCount >= 20 ? 66 : 70;
+        $portCount       = $renewablePorts->count();
+        $costPerPort     = $portCount >= 20 ? 66 : 70;
         $costPerPortReal = $portCount >= 20 ? 330 : 350;
-        $totalCost = $costPerPort * $portCount;
+        $totalCost       = $costPerPort * $portCount;
 
         if ($user->credits_balance < $totalCost) {
             return response()->json([
@@ -243,15 +244,15 @@ class PortsController extends Controller
             DB::commit();
 
             return response()->json([
-                'message' => "Renovação de {$portCount} porta(s) realizada com sucesso.",
-                'renewedCount' => $portCount,
-                'renewedPorts' => $renewablePorts->map(function ($port) {
+                'message'          => "Renovação de {$portCount} porta(s) realizada com sucesso.",
+                'renewedCount'     => $portCount,
+                'renewedPorts'     => $renewablePorts->map(function ($port) {
                     return [
-                        'id' => $port->id,
-                        'expires_at' => $port->expires_at->toIso8601String(),
-                        'last_renovation' => $port->last_renovation->toIso8601String(),
+                        'id'              => $port->id,
+                        'expires_at'      => optional($port->expires_at)->toIso8601String(),
+                        'last_renovation' => optional($port->last_renovation)->toIso8601String(),
                     ];
-                }),
+                })->values(),
                 'newCreditsBalance' => $user->credits_balance,
             ]);
         } catch (\Exception $e) {

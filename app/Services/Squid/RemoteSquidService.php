@@ -3,12 +3,11 @@
 namespace App\Services\Squid;
 
 use phpseclib3\Net\SSH2;
-
 use App\Models\User;
 use App\Models\SquidPort;
 use App\Models\IpPool;
-
 use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\DB;
 
 class RemoteSquidService
 {
@@ -54,15 +53,14 @@ class RemoteSquidService
     return $result;
   }
 
-
   public function syncPortsWithDatabase(): array
   {
     $squidData = $this->getUsersWithPortsAndIps();
     $syncReport = [
       'assigned_ports' => 0,
-      'missing_users' => [],
-      'missing_ports' => [],
-      'missing_ips' => [],
+      'missing_users'  => [],
+      'missing_ports'  => [],
+      'missing_ips'    => [],
     ];
 
     foreach ($squidData as $squidUsername => $data) {
@@ -91,8 +89,7 @@ class RemoteSquidService
 
         $port->user_id = $user->id;
         $port->ip_pool_id = $ipPool?->id;
-        $port->save();
-
+        $port->save(); // updated hook fará o resto
         $syncReport['assigned_ports']++;
       }
     }
@@ -131,7 +128,7 @@ class RemoteSquidService
       foreach (explode("\n", $output) as $line) {
         if (preg_match('/^tcp_outgoing_address\s+([0-9\.]+)\s+user_\w+\s+port(\d+)/', trim($line), $match)) {
           $data['ips'][] = [
-            'ip' => $match[1],
+            'ip'   => $match[1],
             'port' => (int)$match[2],
           ];
         }
@@ -149,10 +146,10 @@ class RemoteSquidService
     $confFile     = "{$this->remotePath}/user_ports_{$username}.conf";
     $backupFile   = "{$confFile}.bak";
 
-    // 1. Cria backup do arquivo original
+    // 1. Backup
     $this->ssh->exec("cp $confFile $backupFile");
 
-    // 2. Tenta substituir o IP no arquivo
+    // 2. Edita o IP
     $editCommand = sprintf(
       "sed -i 's/^tcp_outgoing_address .* port%d/tcp_outgoing_address %s user_%s port%d/' %s",
       $portNumber,
@@ -164,31 +161,30 @@ class RemoteSquidService
 
     $this->ssh->exec($editCommand);
 
-    // 3. Valida a nova configuração
+    // 3. Valida
     $validation = $this->ssh->exec("squid -k parse");
     if (str_contains($validation, 'FATAL') || str_contains($validation, 'error')) {
-      // 4. Restaura backup se falhar
+      // 4. Reverte
       $this->ssh->exec("mv $backupFile $confFile");
 
-      // Revalida para garantir retorno ao estado anterior
       $revalidate = $this->ssh->exec("squid -k parse");
       logger()->error("Falha ao aplicar IP novo no Squid. Configuração revertida.", [
-        'port' => $port->port,
-        'username' => $username,
-        'erro_parse' => $validation,
+        'port'        => $port->port,
+        'username'    => $username,
+        'erro_parse'  => $validation,
         'revalidacao' => $revalidate,
       ]);
 
       throw new \Exception("Falha ao validar nova configuração do Squid: $validation");
     }
 
-    // 5. Aplica a nova config
+    // 5. Aplica
     $this->ssh->exec("squid -k reconfigure");
 
-    // 6. Remove backup pois tudo funcionou
+    // 6. Remove backup
     $this->ssh->exec("rm -f $backupFile");
 
-    // 7. Agora sim: atualiza o banco de dados
+    // 7. Atualiza banco (dispara o hook updated que ajusta flags/log/test)
     $port->ip_pool_id = $newIp->id;
     $port->save();
 
@@ -198,13 +194,10 @@ class RemoteSquidService
   public function getBandwidthUsageForUser(string $squidUsername): float
   {
     $logPath = '/var/log/squid-instance1/access.log';
-
-    // Escapa os argumentos de shell corretamente
     $escapedUser = escapeshellarg("user_{$squidUsername}");
     $escapedLogPath = escapeshellarg($logPath);
 
     $command = "grep {$escapedUser} {$escapedLogPath} | awk '{sum += \$NF} END {print sum}'";
-
     $output = trim($this->ssh->exec($command));
 
     if (empty($output)) {
