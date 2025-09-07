@@ -13,7 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: [
-            '204.157.151.245',
+            '187.86.21.245',
             '172.17.0.10'
         ]);
         $middleware->web(append: [
