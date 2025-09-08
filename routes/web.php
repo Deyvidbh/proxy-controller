@@ -7,7 +7,13 @@ use Inertia\Inertia;
 use App\Http\Controllers\UserCredits\CreditsController;
 use App\Http\Controllers\Squid\PortsController;
 
+use Illuminate\Support\Facades\Auth;
+
 Route::get('/', function () {
+    if (Auth::check()) {
+        return redirect()->route('dashboard.ports.index');
+    }
+
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
         'canRegister' => Route::has('register'),
