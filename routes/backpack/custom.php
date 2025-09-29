@@ -17,7 +17,7 @@ Route::group([
     'namespace' => 'App\Http\Controllers\Admin',
 ], function () { // custom admin routes
     Route::get('faturamento-mensal', [App\Http\Controllers\Admin\FaturamentoMensalController::class, 'dashboard'])
-        ->name('backpack.faturamento.dashboard');
+        ->name('backpack.faturamento.dashboard')->middleware('admin');
 }); // this should be the absolute last line of this file
 
 /**
