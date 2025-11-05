@@ -34,7 +34,8 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
-        'auto_renovation'
+        'auto_renovation',
+        'asaas_customer'
     ];
 
     /**

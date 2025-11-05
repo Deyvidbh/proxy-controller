@@ -3,34 +3,24 @@
 namespace App\Services\UserCredits;
 
 use App\Models\UserCredit;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Illuminate\Validation\ValidationException;
-
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Exception;
 
 class UserCreditService
 {
     /**
      * Cria um novo crédito validando os dados fornecidos com base em regras específicas.
-     * 
-     * Este método valida os dados de entrada usando um conjunto de regras definidas para garantir que todos os campos necessários
-     * estejam presentes e sejam válidos antes de criar um novo registro de crédito na base de dados. A validação inclui:
-     * - Verificação da presença e formato numérico do campo 'amount'.
-     * - Confirmação de que o 'type' é um dos valores permitidos ('withdraw', 'credit').
-     * - Checagem de que 'external_reference' é único e está presente.
-     * - Validação de que, se fornecido, 'payment_id' é único.
-     * - Exigência de que o campo 'description' esteja presente e seja uma string.
-     * - Restrição do campo 'status' para o valor 'pending' como inicialmente requerido.
-     * - Verificação de que 'user_id' corresponde a um usuário existente na base de dados.
-     * 
-     * Se qualquer uma dessas validações falhar, o método retornará 'false'. Caso contrário, um novo crédito será criado com os dados fornecidos,
-     * e 'true' será retornado para indicar sucesso na operação.
      *
-     * @param  array $data Dados necessários para a criação do crédito, incluindo 'amount', 'type', 'external_reference',
-     *                     'payment_id' (opcional, serve para identificar pagamentos no gateway de pagamento.), 'description', 'status' e 'user_id'.
+     * @param  array $data
+     * @return \App\Models\UserCredit
+     * @throws \Illuminate\Validation\ValidationException
      */
     public function create(array $data): UserCredit
     {
@@ -47,13 +37,13 @@ class UserCreditService
         ];
 
         $validator = Validator::make($data, $rules);
-
         if ($validator->fails()) {
-            throw new \Illuminate\Validation\ValidationException($validator);
+            throw new ValidationException($validator);
         }
 
         $credit = UserCredit::create($validator->validated());
 
+        // Se for retirada, atualiza saldo já aqui.
         if ($credit->type === 'withdraw') {
             $this->updateUserBalance($credit);
         }
@@ -63,50 +53,83 @@ class UserCreditService
 
     /**
      * Atualiza um crédito específico baseando-se em um identificador único e dados fornecidos.
-     * 
-     * Este método permite a atualização do 'status' e, opcionalmente, do 'payment_id' de um crédito específico, 
-     * identificado pelo 'external_reference' ou 'payment_id'. Os dados de entrada são validados para assegurar:
-     * - Que o 'status' esteja entre os valores permitidos: 'completed', 'pending', 'canceled'.
-     * - Que, se um 'payment_id' for fornecido para atualização, ele seja único entre todos os créditos, exceto para o crédito que está sendo atualizado.
-     *   Isso permite atribuir um 'payment_id' a um crédito que anteriormente não tinha um, e garante que não haverá dois créditos com o mesmo 'payment_id'.
-     * 
-     * A operação é realizada dentro de uma transação de banco de dados para manter a integridade dos dados. Se o 'status' do crédito for
-     * atualizado para 'completed', o saldo do usuário associado será ajustado conforme o tipo de transação (crédito ou retirada).
-     * 
-     * A função tenta encontrar o crédito usando 'external_reference' ou 'payment_id'. Se o crédito não for encontrado ou se ocorrer falha na
-     * validação dos dados, 'false' é retornado. Caso contrário, em sucesso na atualização, 'true' é retornado.
-     * 
-     * @param  string $identifier Identificador único (payment_id ou external_reference) utilizado para localizar o crédito específico a ser atualizado.
-     * @param  array $data Array contendo os dados para atualização, especificamente o 'status' da transação e, opcionalmente, um novo 'payment_id'.
+     *
+     * @param  string $identifier  payment_id ou external_reference
+     * @param  array  $data
+     * @return \App\Models\UserCredit
+     * @throws \Symfony\Component\HttpKernel\Exception\HttpException
+     * @throws \Illuminate\Validation\ValidationException
      */
     public function update($identifier, array $data)
     {
         $rules = [
-            'status'     => 'required|in:completed,pending,canceled,expired',
-            'payment_id' => 'nullable|string|exists:user_credits,payment_id',
+            'status'         => 'required|in:completed,pending,canceled,expired',
+            'payment_id'     => 'nullable|string',
+            'asaas_customer' => 'nullable|string',
         ];
 
         $validator = Validator::make($data, $rules);
-
         if ($validator->fails()) {
             throw new ValidationException($validator);
         }
 
         return DB::transaction(function () use ($identifier, $data) {
             try {
+                /** @var UserCredit $credit */
                 $credit = UserCredit::where('external_reference', $identifier)
                     ->orWhere('payment_id', $identifier)
                     ->firstOrFail();
 
+                // Idempotência suave: se já completed, não faz nada.
                 if ($credit->status === 'completed') {
-                    throw new HttpException(422, 'Não é possível atualizar um crédito que já foi completado.');
+                    Log::info('UserCredit update no-op (already completed)', [
+                        'credit_id'  => $credit->id,
+                        'identifier' => $identifier,
+                    ]);
+                    return $credit;
                 }
 
+                // Atualiza campos do crédito
                 $credit->update($data);
 
-                if ($data['status'] == 'completed') {
+                // Propaga asaas_customer para o usuário, se necessário
+                if ($credit->user->asaas_customer === null && !empty($data['asaas_customer'])) {
+                    $credit->user->update(['asaas_customer' => $data['asaas_customer']]);
+                }
+
+                // Se virou completed, efeitos colaterais
+                if ($data['status'] === 'completed') {
+                    // Ajusta saldo do usuário conforme type (credit/withdraw) com lock pessimista
                     $this->updateUserBalance($credit);
+
+                    // Sincroniza o saldo atual no registro do crédito
                     $credit->update(['balance' => $credit->user->credits_balance]);
+
+                    // Ação pós-pagamento (renovar portas) idempotente
+                    if (is_null($credit->post_action_done_at)) {
+                        $user = $credit->user()->first();
+
+                        $result = $this->renewAllPorts($user); // Retorna DTO (array), sem HTTP
+
+                        if (!($result['ok'] ?? false)) {
+                            // Se quiser abortar toda a transação ao falhar a renovação:
+                            throw new \RuntimeException($result['message'] ?? 'Falha na renovação das portas');
+                        }
+
+                        // Marca como executado para não rodar duas vezes
+                        $credit->update(['post_action_done_at' => now()]);
+
+                        Log::info('Post-payment action executed (renewAllPorts)', [
+                            'credit_id'      => $credit->id,
+                            'user_id'        => $user?->id,
+                            'renewedCount'   => $result['renewedCount'] ?? null,
+                            'newBalance'     => $result['newCreditsBalance'] ?? null,
+                        ]);
+                    } else {
+                        Log::info('Post-payment action already executed (idempotent)', [
+                            'credit_id' => $credit->id,
+                        ]);
+                    }
                 }
 
                 return $credit;
@@ -118,10 +141,10 @@ class UserCreditService
 
     /**
      * Obtém créditos de um usuário específico ou um crédito específico.
-     * 
-     * @param  string|null $userId Identificador do usuário para buscar todos os seus créditos.
-     * @param  string|null $identifier Identificador único (payment_id ou unique_id) para buscar um crédito específico.
-     * @return \Illuminate\Database\Eloquent\Collection|UserCredit|null
+     *
+     * @param  string|null $userId
+     * @param  string|null $identifier payment_id ou unique_id
+     * @return \Illuminate\Database\Eloquent\Collection|\App\Models\UserCredit|array
      */
     public function get(?string $userId = null, ?string $identifier = null)
     {
@@ -146,6 +169,9 @@ class UserCreditService
         return [];
     }
 
+    /**
+     * Retorna resumo e lista de créditos de um usuário.
+     */
     public function getSummary($userId)
     {
         $credits = UserCredit::with('paymentReference')
@@ -180,9 +206,15 @@ class UserCreditService
         ];
     }
 
+    /**
+     * Atualiza o saldo do usuário com lock pessimista.
+     *
+     * @throws \Exception
+     */
     protected function updateUserBalance(UserCredit $credit)
     {
-        $user = $credit->user()->first();
+        /** @var User $user */
+        $user = $credit->user()->lockForUpdate()->first();
 
         if (!$user) {
             throw new Exception("Usuário não encontrado para o crédito ID {$credit->id}");
@@ -200,5 +232,73 @@ class UserCreditService
         }
 
         $user->save();
+    }
+
+    /**
+     * Renova todas as portas do usuário e debita os créditos.
+     * NÃO abre nova transação nem retorna HTTP; devolve um DTO (array).
+     *
+     * @return array{ok:bool, code:int, message?:string, renewedCount?:int, renewedPorts?:array, newCreditsBalance?:float}
+     */
+    private function renewAllPorts(User $user): array
+    {
+        $ports = $user->squidPorts()->get();
+
+        if ($ports->isEmpty()) {
+            return ['ok' => false, 'code' => 400, 'message' => 'Você não possui portas para renovar.'];
+        }
+
+        $portCount       = $ports->count();
+        $costPerPort     = $portCount >= 20 ? 66 : 70;
+        $costPerPortReal = $portCount >= 20 ? 330 : 350;
+        $totalCost       = $costPerPort * $portCount;
+
+        // Garante leitura fresca do saldo (e se quiser, pode travar aqui também)
+        $user->refresh();
+
+        if ($user->credits_balance < $totalCost) {
+            return [
+                'ok'     => false,
+                'code'   => 400,
+                'message' => "Você precisa de {$totalCost} créditos para renovar {$portCount} porta(s). Saldo atual: {$user->credits_balance} créditos."
+            ];
+        }
+
+        // Atualiza vencimentos
+        foreach ($ports as $port) {
+            $base = $port->expires_at ?: now();
+            $port->expires_at      = $base->copy()->addDays(30);
+            $port->last_renovation = now();
+            $port->save();
+        }
+
+        // Lança um "withdraw" para registrar o débito da renovação
+        $creditData = [
+            'balance'            => $user->credits_balance - $totalCost,
+            'amount'             => $totalCost,
+            'price'              => $portCount * $costPerPortReal,
+            'type'               => 'withdraw',
+            'external_reference' => (string) Str::ulid(),
+            'payment_id'         => null,
+            'description'        => "Renovação de {$portCount} porta(s) proxy (R$ {$costPerPortReal} cada)",
+            'status'             => 'completed',
+            'user_id'            => $user->id,
+        ];
+
+        $this->create($creditData);
+
+        $user->refresh();
+
+        return [
+            'ok'                => true,
+            'code'              => 200,
+            'renewedCount'      => $portCount,
+            'renewedPorts'      => $ports->map(fn($p) => [
+                'id'              => $p->id,
+                'expires_at'      => optional($p->expires_at)->toIso8601String(),
+                'last_renovation' => optional($p->last_renovation)->toIso8601String(),
+            ])->values()->all(),
+            'newCreditsBalance' => $user->credits_balance,
+        ];
     }
 }

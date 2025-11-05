@@ -23,7 +23,9 @@ class PaymentReference extends Model
         'init_point',
         'type',
         'gateway',
-        'status'
+        'status',
+        'payment_id',
+        'asaas_customer'
     ];
 
     /**
@@ -34,4 +36,14 @@ class PaymentReference extends Model
     protected $casts = [
         'updated_at' => 'datetime'
     ];
+
+      /**
+     * Get the user that owns the UserCredit
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\hasOne
+     */
+    public function userCredit()
+    {
+        return $this->hasOne(UserCredit::class, 'external_reference', 'external_reference');
+    }
 }

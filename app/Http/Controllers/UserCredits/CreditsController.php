@@ -198,7 +198,7 @@ class CreditsController extends Controller implements HasMiddleware
             ]);
 
             $paymentReference = PaymentReference::create([
-                'identifier'         => $asaas_response['externalReference'],
+                'identifier'         => $asaas_response['id'],
                 'external_reference' => $refValue,
                 'price'              => $totalCost,
                 'init_point'         => $asaas_response['link'],

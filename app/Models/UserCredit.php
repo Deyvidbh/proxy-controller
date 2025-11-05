@@ -27,7 +27,13 @@ class UserCredit extends Model
         'external_reference',
         'payment_id',
         'status',
-        'user_id'
+        'user_id',
+        'asaas_customer',
+        'post_action_done_at'
+    ];
+
+    protected $casts = [
+        'post_action_done_at' => 'datetime',
     ];
 
     /**
