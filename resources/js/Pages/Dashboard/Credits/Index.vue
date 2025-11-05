@@ -5,6 +5,8 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
   balance: Number,
+  total_cost: Number,
+  cost_per_port: Number,
   transactions: {
     type: Array,
     default: () => [],
@@ -12,12 +14,9 @@ const props = defineProps({
   credits_summary: {
     type: Object,
     default: () => ({}),
-  }
+  },
+  ports: Array,
 });
-
-const isSubmitting = ref(false);
-const isModalOpen = ref(false);
-const creditQuantity = ref(50);
 
 const notification = computed(() => {
   const flash = usePage().props.flash;
@@ -30,29 +29,55 @@ const notification = computed(() => {
   return { show: false };
 });
 
-const addCredits = () => {
-  router.post(route('dashboard.credits.create'), {
-    quantity: creditQuantity.value,
-  }, {
-    preserveScroll: true,
-    onStart: () => isSubmitting.value = true,
-    onFinish: () => isSubmitting.value = false,
-    onSuccess: () => {
-      closeModal();
-    },
-    onError: (errors) => {
-      if (errors.quantity) {
-        alert('Erro: ' + errors.quantity);
-      }
+const feedbackMessage = ref(null);
+const feedbackSuccess = ref(false);
+
+setTimeout(() => {
+  feedbackMessage.value = null;
+}, 6000);
+
+const renewalSummary = computed(() => {
+  const portCount = props.ports.length;
+  const costPerPort = portCount >= 20 ? 66 : 70;
+  const totalCost = portCount * costPerPort;
+  return {
+    portCount,
+    costPerPort,
+    totalCost,
+    hasEnoughCredits: props.balance >= totalCost,
+  };
+});
+
+const renewingAll = ref(false);
+
+const renewAllPorts = () => {
+  renewingAll.value = true;
+  feedbackMessage.value = null;
+
+  router.post(
+    route('dashboard.credits.store'),
+    {},
+    {
+      preserveScroll: true,
+      onSuccess: (page) => {
+        const flash = page?.props?.flash || {};
+        if (flash.error) {
+          feedbackSuccess.value = false;
+          feedbackMessage.value = flash.error;   // veio do catch do controller
+        } else if (flash.success) {
+          feedbackSuccess.value = true;
+          feedbackMessage.value = flash.success; // sucesso
+        } else {
+          feedbackMessage.value = null;          // nada para mostrar
+        }
+      },
+      onFinish: () => {
+        renewingAll.value = false;
+      },
     }
-  });
+  );
 };
 
-const openModal = () => isModalOpen.value = true;
-const closeModal = () => {
-  isModalOpen.value = false;
-  creditQuantity.value = 50;
-};
 
 const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const formatDate = (dateString) => new Date(dateString).toLocaleString('pt-BR');
@@ -77,13 +102,27 @@ const getStatusClass = (status) => {
     <div class="py-12">
       <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
         <div class="bg-white shadow-xl sm:rounded-lg p-6">
-          <div class="mb-6 flex items-center justify-between">
-            <button @click="openModal" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600">
-              + Adicionar Créditos
+
+          <div v-if="$page.props.flash?.message"
+            class="mb-4 bg-green-100 border-l-4 border-green-500 text-green-700 p-4" role="alert">
+            <p>{{ $page.props.flash?.message }}</p>
+          </div>
+
+          <div class="bg-white shadow-md rounded-lg p-6 mb-6 border border-gray-200">
+
+            <p class="text-sm text-gray-700">Você possui <strong>{{ renewalSummary.portCount }}</strong> portas
+              ativas.
+            </p>
+
+            <p class="text-sm text-gray-700">Custo por porta: <strong>R$ {{ cost_per_port }}</strong></p>
+
+            <p class="text-sm text-gray-700">Custo total da renovação: <strong>R$ {{ total_cost }}</strong></p>
+
+            <button :disabled="renewingAll" @click="renewAllPorts"
+              class="mt-4 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50">
+              {{ renewingAll ? 'Gerando pagamento...' : 'Renovar Serviço' }}
             </button>
-            <div class="bg-blue-100 text-blue-700 px-4 py-2 rounded-md shadow-sm">
-              Saldo: <span class="font-bold">{{ formatCurrency(props.balance) }}</span>
-            </div>
+
           </div>
 
           <div v-if="notification.show"
@@ -139,41 +178,6 @@ const getStatusClass = (status) => {
                 </tbody>
               </table>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal -->
-    <div v-if="isModalOpen"
-      class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center">
-      <div class="relative mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-        <div class="mt-3 text-center">
-          <h3 class="text-lg leading-6 font-medium text-gray-900">Adicionar Créditos</h3>
-          <div class="mt-2 px-7 py-3">
-            <form @submit.prevent="addCredits">
-              <div class="mb-4">
-                <label for="quantity" class="block text-sm font-medium text-gray-700 text-left">Quantidade de
-                  créditos</label>
-                <input v-model="creditQuantity" type="number" id="quantity"
-                  class="mt-1 block w-full border-gray-300 rounded-md shadow-sm px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
-                  required min="50" max="3000">
-              </div>
-              <div class="flex justify-center">
-                <button type="submit" :disabled="isSubmitting"
-                  class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded inline-flex items-center disabled:opacity-50 disabled:cursor-not-allowed">
-                  <span>Adicionar Créditos</span>
-                  <span v-if="isSubmitting"
-                    class="ml-2 animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></span>
-                </button>
-              </div>
-            </form>
-          </div>
-          <div class="items-center px-4 py-3">
-            <button @click="closeModal"
-              class="px-4 py-2 bg-gray-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-600">
-              Fechar
-            </button>
           </div>
         </div>
       </div>

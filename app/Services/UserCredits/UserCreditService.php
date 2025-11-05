@@ -42,7 +42,7 @@ class UserCreditService
             'external_reference'      => 'required|string|unique:user_credits,external_reference',
             'payment_id'              => 'nullable|string|unique:user_credits,payment_id',
             'description'             => 'required|string',
-            'status'                  => 'required|in:pending,completed',
+            'status'                  => 'required|in:pending,completed,cancelled,expired',
             'user_id'                 => 'required|exists:users,id',
         ];
 
@@ -82,7 +82,7 @@ class UserCreditService
     public function update($identifier, array $data)
     {
         $rules = [
-            'status'     => 'required|in:completed,pending,canceled',
+            'status'     => 'required|in:completed,pending,canceled,expired',
             'payment_id' => 'nullable|string|exists:user_credits,payment_id',
         ];
 

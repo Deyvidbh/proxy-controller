@@ -1,9 +1,8 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref } from 'vue';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { CheckCircleIcon, XCircleIcon, ClockIcon, EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/solid';
-import { router } from '@inertiajs/vue3';
 
 const props = defineProps({
     ports: Array,
@@ -81,8 +80,6 @@ const rotateAllIps = async () => {
 
 const testResults = ref({});
 const passwordVisible = ref({});
-const renovationLoading = ref({ global: false });
-const userCredits = ref(props.user.credits_balance);
 
 const formatTimeRemaining = (expiryDate) => {
     if (!expiryDate) return 'N/A';
@@ -119,72 +116,8 @@ const togglePasswordVisibility = (portId) => {
     passwordVisible.value[portId] = !passwordVisible.value[portId];
 };
 
-const toggleAutoRenovation = async () => {
-    renovationLoading.value.global = true;
-    const newStatus = !props.user.auto_renovation;
-
-    router.patch(route('dashboard.ports.toggle-renovation'), {
-        auto_renovation: newStatus,
-    }, {
-        preserveState: true,
-        preserveScroll: true,
-        onFinish: () => {
-            renovationLoading.value.global = false;
-        },
-        onError: (errors) => {
-            console.error("Erro ao atualizar a renovação:", errors);
-        }
-    });
-};
-
 const feedbackMessage = ref(null);
 const feedbackSuccess = ref(false);
-
-const renewingAll = ref(false);
-const renewalSummary = computed(() => {
-    const portCount = props.ports.length;
-    const costPerPort = portCount >= 20 ? 66 : 70;
-    const totalCost = portCount * costPerPort;
-    return {
-        portCount,
-        costPerPort,
-        totalCost,
-        hasEnoughCredits: props.user.credits_balance >= totalCost,
-    };
-});
-
-const renewAllPorts = async () => {
-    renewingAll.value = true;
-    feedbackMessage.value = null;
-
-    try {
-        const response = await axios.post(route('dashboard.ports.renew-all'));
-
-        feedbackSuccess.value = true;
-        feedbackMessage.value = response.data.message;
-
-        const renewedPorts = response.data.renewedPorts || [];
-
-        for (const renewed of renewedPorts) {
-            const port = props.ports.find(p => p.id === renewed.id);
-            if (port) {
-                port.expires_at = renewed.expires_at;
-                port.last_renovation = renewed.last_renovation;
-                port.active_license = true;
-            }
-        }
-
-        if (response.data.newCreditsBalance !== undefined) {
-            userCredits.value = response.data.newCreditsBalance;
-        }
-
-    } catch (error) {
-        feedbackSuccess.value = false;
-        feedbackMessage.value = error.response?.data?.message || 'Erro ao renovar portas.';
-    } finally {
-        renewingAll.value = false;
-    }
-};
 
 setTimeout(() => {
     feedbackMessage.value = null;
@@ -198,15 +131,6 @@ setTimeout(() => {
             <div class="flex justify-between items-center">
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">Portas Proxy 🌐</h2>
                 <div class="flex items-center space-x-3">
-                    <!-- <span class="text-sm text-gray-600">Auto-Renovação:</span> -->
-                    <!-- <button @click="toggleAutoRenovation" :disabled="renovationLoading.global"
-                        class="mr-2 relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
-                        :class="props.user.auto_renovation ? 'bg-indigo-600' : 'bg-gray-300'" role="switch"
-                        :aria-checked="props.user.auto_renovation">
-                        <span class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition"
-                            :class="props.user.auto_renovation ? 'translate-x-5' : 'translate-x-0'">
-                        </span>
-                    </button> -->
                     <button @click="rotateAllIps" :disabled="rotatingAll"
                         class="mr-2 inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50">
                         <span v-if="rotatingAll">Rotacionando IPs...</span>
@@ -230,25 +154,6 @@ setTimeout(() => {
                     class="mb-4 bg-green-100 border-l-4 border-green-500 text-green-700 p-4" role="alert">
                     <p>{{ $page.props.flash?.message }}</p>
                 </div>
-
-                <div class="bg-white shadow-md rounded-lg p-6 mb-6 border border-gray-200">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-2">Renovação de Portas</h3>
-                    <p class="text-sm text-gray-700">Você possui <strong>{{ renewalSummary.portCount }}</strong> portas
-                        ativas.
-                    </p>
-                    <p class="text-sm text-gray-700">Custo por porta: <strong>{{ renewalSummary.costPerPort }}
-                            créditos</strong>
-                    </p>
-                    <p class="text-sm text-gray-700">Custo total da renovação: <strong>{{ renewalSummary.totalCost }}
-                            créditos</strong></p>
-                    <p class="text-sm text-gray-700">Seu saldo: <strong>{{ userCredits }} créditos</strong></p>
-
-                    <button :disabled="renewingAll || !renewalSummary.hasEnoughCredits" @click="renewAllPorts"
-                        class="mt-4 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50">
-                        {{ renewingAll ? 'Renovando...' : 'Renovar Todas as Portas' }}
-                    </button>
-                </div>
-
 
                 <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg">
                     <div class="overflow-x-auto">

@@ -39,4 +39,9 @@ return [
         'api_key' => env('PROXY_CHECK_API_KEY'),
     ],
 
+    'asaas' => [
+        'base_url' => env('ASAAS_BASE_URL', 'https://api-sandbox.asaas.com'),
+        'token'    => env('ASAAS_ACCESS_TOKEN'),
+    ],
+
 ];

@@ -30,8 +30,7 @@ Route::middleware([
 
         Route::prefix('credits')->name('credits.')->group(function () {
             Route::get('/', [CreditsController::class, 'index'])->name('index');
-
-            Route::post('/', [CreditsController::class, 'create'])->name('create');
+            Route::post('/', [CreditsController::class, 'storeCheckout'])->name('store');
         });
 
         Route::prefix('ports')->name('ports.')->group(function () {
@@ -41,8 +40,10 @@ Route::middleware([
             Route::post('/{port}/test', [PortsController::class, 'testProxy'])->name('test');
             Route::post('/{port}/rotate', [PortsController::class, 'rotateIp'])->name('rotate');
             Route::post('/ports/rotate-all', [PortsController::class, 'rotateAllIps'])->name('rotate-all');
-
-            Route::patch('/toggle-renovation', [PortsController::class, 'toggleRenovation'])->name('toggle-renovation');
-            Route::post('/renew-all', [PortsController::class, 'renewAllPorts'])->name('renew-all');
         });
     });
+
+
+Route::view('/payment/success', 'payments.success')->name('payments.success');
+Route::view('/payment/error', 'payments.error')->name('payments.error');
+Route::view('/payment/expired', 'payments.expired')->name('payments.expired');

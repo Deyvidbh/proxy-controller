@@ -12,3 +12,4 @@ Route::get('/user', function (Request $request) {
 Route::get('/proxy/validate-port', [PortCheckController::class, 'validatePort']);
 
 Route::post('/mp/webhook', [WebhookDispatcherController::class, 'mercadoPagoHandleWebhook']);
+Route::post('/asaas/webhook', [WebhookDispatcherController::class, 'asaasWebhookHandle']);

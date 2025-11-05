@@ -36,4 +36,16 @@ class WebhookDispatcherController extends Controller
             return response()->json(['error' => 'Erro ao processar o webhook', 'details' => $e->getMessage()], 500);
         }
     }
+
+    public function asaasWebhookHandle(Request $request)
+    {
+        Log::info('ASAAS WEBHOOK', [
+            'ip'      => $request->ip(),
+            'headers' => $request->headers->all(),
+            'raw'     => $request->getContent(),
+            'json'    => $request->all(),
+        ]);
+
+        return response()->json(['status' => 'ok'], 200);
+    }
 }

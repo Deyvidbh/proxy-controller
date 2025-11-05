@@ -167,23 +167,7 @@ class PortsController extends Controller
         ]);
     }
 
-    /**
-     * Alterna o status de auto-renovação de uma porta.
-     */
-    public function toggleRenovation(Request $request)
-    {
-        $request->validate([
-            'auto_renovation' => 'required|boolean',
-        ]);
-
-        $user = $request->user();
-        $user->auto_renovation = $request->auto_renovation;
-        $user->save();
-
-        return back()->with('message', 'Auto-renovação atualizada com sucesso.');
-    }
-
-    public function renewAllPorts(Request $request)
+    /* public function renewAllPorts(Request $request)
     {
         $user = $request->user();
 
@@ -261,5 +245,5 @@ class PortsController extends Controller
 
             return response()->json(['message' => 'Erro ao renovar as portas.'], 500);
         }
-    }
+    } */
 }
