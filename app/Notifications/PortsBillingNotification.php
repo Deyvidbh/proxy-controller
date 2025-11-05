@@ -24,9 +24,13 @@ class PortsBillingNotification extends Notification implements ShouldQueue
      */
     public function via($notifiable): array
     {
-        return [
-            'mail' => 'proxyMailQueue',
-        ];
+        return ['mail'];
+    }
+
+    public function viaQueues(): array
+    {
+        // Envia o canal 'mail' para a fila proxyMailQueue
+        return ['mail' => 'proxyMailQueue'];
     }
 
     /**
