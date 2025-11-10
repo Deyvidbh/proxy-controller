@@ -8,6 +8,6 @@
         {{ \Carbon\Carbon::parse($expiryDate)->format('d/m/Y') }}) segue pendente.</p>
     <p>Aconteceu algo? Podemos te ajudar com a renovação ou com algum problema técnico.</p>
     <p>
-        ou fale com <a href="mailto:suporte@bcopy.co">suporte@bcopy.co</a>.
+        ou fale com <a href="mailto:contato@simplecorp.io">contato@simplecorp.io</a>.
     </p>
 @endsection

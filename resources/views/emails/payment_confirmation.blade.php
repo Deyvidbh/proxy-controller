@@ -102,7 +102,7 @@
 
         <div class="footer">
             <p>Se você não solicitou esses créditos, ou se você tiver qualquer dúvida, por favor, entre em contato
-                conosco em <a href="mailto:suporte@bcopy.co">suporte@bcopy.co</a>.</p>
+                conosco em <a href="mailto:contato@simplecorp.io">contato@simplecorp.io</a>.</p>
         </div>
     </div>
 </body>

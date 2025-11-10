@@ -50,7 +50,7 @@
         @yield('content')
 
         <div class="footer">
-            <p>Precisa de ajuda? Fale com: <a href="mailto:suporte@bcopy.co">suporte@bcopy.co</a>.</p>
+            <p>Precisa de ajuda? Fale com: <a href="mailto:contato@simplecorp.io">contato@simplecorp.io</a>.</p>
         </div>
     </div>
 </body>

@@ -49,7 +49,7 @@
         <p><a href="{{ $paymentReference->init_point }}" target="_blank">Clique aqui para pagar</a></p>
         <p>Você receberá outro e-mail assim que o status do seu pagamento for atualizado.</p>
         <div class="footer">
-            <p>Se você não solicitou esses créditos, por favor, entre em contato conosco imediatamente em <a href="mailto:suporte@bcopy.co">suporte@bcopy.co</a>.</p>
+            <p>Se você não solicitou esses créditos, por favor, entre em contato conosco imediatamente em <a href="mailto:contato@simplecorp.io">contato@simplecorp.io</a>.</p>
         </div>
     </div>
 </body>

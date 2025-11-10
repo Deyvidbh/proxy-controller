@@ -45,7 +45,7 @@
             <div class="footer">
                 <p>Este é um e-mail automático; por favor, não responda. Se você não solicitou este e-mail, por favor,
                     ignore-o ou entre em contato conosco em <a
-                        href="mailto:suporte@bcopy.co">suporte@bcopy.co</a>.</p>
+                        href="mailto:contato@simplecorp.io">contato@simplecorp.io</a>.</p>
             </div>
         </div>
     </div>
