@@ -177,20 +177,26 @@ class SquidPort extends Model
 
         $userId = $this->user->id;
 
+        // Pega todos os IPs que esse usuário já usou
         $usedIps = IpUsageLog::where('user_id', $userId)
             ->pluck('ip_address')
             ->toArray();
 
+        // 1ª tentativa: pegar um IP NÃO usado ainda, com id > 253, livre, de forma randômica
         $ip = IpPool::where('in_use', false)
-            ->whereNotIn('ip_address', $usedIps)
+            ->where('id', '>', 253)              // só IPs acima do id 253
+            ->whereNotIn('ip_address', $usedIps) // que o usuário ainda não usou
+            ->inRandomOrder()                    // seleção randômica
             ->first();
 
+        // Se não achou nenhum IP novo, tenta reaproveitar o mais antigo que ele já usou
         if (!$ip && count($usedIps) > 0) {
             $oldestUsedIp = IpUsageLog::where('user_id', $userId)
                 ->whereIn('ip_address', function ($query) {
                     $query->select('ip_address')
                         ->from('ip_pools')
-                        ->where('in_use', false);
+                        ->where('in_use', false)
+                        ->where('id', '>', 253); // também respeita id > 253 aqui
                 })
                 ->orderBy('used_at', 'asc')
                 ->value('ip_address');
@@ -198,6 +204,7 @@ class SquidPort extends Model
             if ($oldestUsedIp) {
                 $ip = IpPool::where('ip_address', $oldestUsedIp)
                     ->where('in_use', false)
+                    ->where('id', '>', 253) // só pra garantir
                     ->first();
             }
         }
@@ -217,6 +224,7 @@ class SquidPort extends Model
             return false;
         }
     }
+
     #endregion
 
     public function getLastUpdateIpFormattedAttribute()
